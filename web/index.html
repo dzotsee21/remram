@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Go WebSocket Client</title>
+</head>
+<body>
+    <h1>WebSocket Output</h1>
+    <div id="output"></div>
+    <input type="text" id="input" />
+    <button onclick="send()">Send</button>
+
+    <script>
+        const output = document.getElementById("output");
+        const input = document.getElementById("input");
+        const socket = new WebSocket("ws://localhost:8080/ws");
+
+        socket.onopen = function (event) {
+            writeToScreen("CONNECTED");
+        };
+
+        socket.onmessage = function (event) {
+            writeToScreen("RECEIVED: " + event.data);
+        };
+
+        socket.onclose = function (event) {
+            writeToScreen("DISCONNECTED");
+        };
+
+        socket.onerror = function (error) {
+            writeToScreen("ERROR: " + error.message);
+        };
+
+        function send() {
+            const message = input.value;
+            socket.send(message);
+            writeToScreen("SENT: " + message);
+            input.value = "";
+        }
+
+        function writeToScreen(message) {
+            const div = document.createElement("div");
+            div.textContent = message;
+            output.appendChild(div);
+        }
+    </script>
+</body>
+</html>
