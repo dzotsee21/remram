@@ -22,7 +22,7 @@
     <script>
       let start = false
       const output = document.getElementById("output");
-      const socket = new WebSocket("ws://192.168.0.105:8080/ws");
+      const socket = new WebSocket("ws://192.168.0.110:8080/ws");
 
       let startX = 0;
       let startY = 0;
@@ -31,6 +31,8 @@
 
       let resX = 0;
       let resY = 0;
+
+      let startTime;
 
       socket.onopen = () => write("CONNECTED");
       socket.onmessage = (e) => {
@@ -43,6 +45,8 @@
       socket.onerror = (e) => write("ERROR");
 
       document.addEventListener("pointerdown", (e) => {
+          startTime = Date.now();
+
           startX = Math.round(e.clientX);
           startY = Math.round(e.clientY);
           e.target.setPointerCapture(e.pointerId);
@@ -54,21 +58,49 @@
           const deltaX = startX - Math.round(e.clientX);
           const deltaY = startY - Math.round(e.clientY);
 
+          let x = currentX - deltaX;
+          let y = currentY - deltaY;
+          if (x < 0) {
+            x = 0
+          }
+          if (y < 0) {
+            y = 0
+          }
+
+          if (x > resX) {
+            x = resX
+          }
+          if (y > resY) {
+            y = resY
+          }
+
           const data = {
-              x: currentX - deltaX,
-              y: currentY - deltaY
+              type: 0,
+              x: x,
+              y: y 
           };
 
           socket.send(JSON.stringify(data));
       });
 
       document.addEventListener("pointerup", (e) => {
-          if ( currentX - (startX - Math.round(e.clientX)) <= resX ) {
+          const duration = Date.now() - startTime;
+          
+          if (duration < 100) {
+            const data = {
+                type: 1,
+            };
+
+            socket.send(JSON.stringify(data))
+            return
+          }
+
+          if (currentX - (startX - Math.round(e.clientX)) <= resX) {
             currentX -= (startX - Math.round(e.clientX));
           } else {
             currentX = resX
           }
-          if ( currentY - (startY - Math.round(e.clientY) <= resY) {
+          if (currentY - (startY - Math.round(e.clientY)) <= resY) {
             currentY -= (startY - Math.round(e.clientY));
           } else {
             currentY = resY
@@ -82,7 +114,7 @@
       }
 
       function assignRes(x, y) {
-        console.log(x, y)
+        console.log(x, y);
         resX = x;
         resY = y;
       };
