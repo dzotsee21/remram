@@ -3,11 +3,17 @@ package main
 import (
 	"fmt"
 	"log"
+	"encoding/json"
 	"net/http"
 
 	"github.com/bendahl/uinput"
 	"github.com/gorilla/websocket"
 )
+
+type MousePos struct {
+	X int32 `json:x`
+	Y int32 `json:y`
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -19,11 +25,11 @@ var upgrader = websocket.Upgrader{
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
-	vm, err := uinput.CreateMouse("/dev/uinput", []byte("VirtualMouse"))
+	vtp, err := uinput.CreateTouchPad("/dev/uinput", []byte("VirtualTouchpad"), 0, 1919, 0, 1079) // should calculate device screen size.
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer vm.Close()
+	defer vtp.Close()
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -32,26 +38,29 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+  res := map[string]interface{}{"type": "res", "x": 1919, "y": 1079}
+  if err := conn.WriteJSON(res); err != nil {
+      return
+  }
+
 	for {
-		messageType, p, err := conn.ReadMessage()
+		_, p, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("read error: ", err)
 			break
 		}
 
-		if string(p) == "s" {
-			fmt.Println("HELLO")
+		var pos MousePos 
+    err = json.Unmarshal(p, &pos)
+    if err != nil {
+        log.Fatal(err)
+    }
 
-			vm.Move(100, 100)
-		}
-		fmt.Printf("received message: %s\n", p)
+		fmt.Println(pos.X)
+		fmt.Println("---")
+		fmt.Println(pos.Y)
 
-		err = conn.WriteMessage(messageType, p)
-		if err != nil {
-			log.Println("write error: ", err)
-			break
-		}
-
+		vtp.MoveTo(pos.X, pos.Y)
 	}
 }
 
