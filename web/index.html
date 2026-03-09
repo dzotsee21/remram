@@ -1,133 +1,111 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Go WebSocket Client</title>
+    <title>Go Remote Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
         html, body {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            touch-action: none; overflow: hidden;
-            -webkit-touch-callout: none; -webkit-user-select: none;
-            user-select: none; -webkit-tap-highlight-color: transparent;
-            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
-        #kb-overlay {
-            display: none; position: fixed; bottom: 0; left: 0;
-            width: 100%; background: rgba(30, 30, 30, 0.95);
-            padding: 10px; box-sizing: border-box; z-index: 100;
+        #controls {
+            position: fixed;
+            top: calc(10px + env(safe-area-inset-top));
+            left: calc(10px + env(safe-area-inset-left));
+            z-index: 1000;
+            display: flex;
+            gap: 8px;
         }
-        .kb-row { display: flex; justify-content: center; margin-bottom: 5px; }
-        .key {
-            background: #444; color: white; border: none; border-radius: 4px;
-            margin: 2px; padding: 12px 0; min-width: 30px; flex: 1;
-            font-size: 18px; text-align: center; cursor: pointer;
+
+        button.ui-btn {
+            background: rgba(40, 40, 40, 0.9);
+            color: white;
+            border: 1px solid #444;
+            padding: 12px 18px;
+            border-radius: 8px;
+            font-size: 14px;
+            backdrop-filter: blur(4px);
         }
-        .key:active { background: #666; transform: translateY(2px); }
-        .key.wide { flex: 2; }
-        .key.special.active-shift { background: #007bff; }
- 
-        #controls { position: fixed; top: 10px; left: 10px; z-index: 10; }
-        button { padding: 10px; margin-right: 5px; }
+
+        #native-invoker {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #output {
+            position: fixed;
+            bottom: calc(10px + env(safe-area-inset-bottom));
+            left: calc(10px + env(safe-area-inset-left));
+            color: #555;
+            font-size: 12px;
+            pointer-events: none;
+        }
     </style>
 </head>
-<body class="unselectable">
+<body>
+
+    <input type="text" id="native-invoker" autocomplete="off" autocapitalize="off" spellcheck="false">
 
     <div id="controls">
-        <button id="toggleBtn" onclick="toggle()">start</button>
-        <button id="kbBtn" onclick="toggleKeyboard()">⌨️ Keyboard</button>
+        <button id="toggleBtn" class="ui-btn" onclick="toggle()">Start</button>
+        <button class="ui-btn" onclick="focusNative()">📱 Native</button>
     </div>
 
     <div id="output"></div>
 
-    <div id="kb-overlay">
-        <div class="kb-row" id="nums"></div>
-        <div class="kb-row" id="row1"></div>
-        <div class="kb-row" id="row2"></div>
-        <div class="kb-row" id="row3"></div>
-        <div class="kb-row">
-            <button id="shiftKey" class="key special" onpointerdown="toggleShift()">Shift</button>
-            <button class="key wide" onpointerdown="startPress(' ')" onpointerup="stopPress()" onpointerleave="stopPress()">Space</button>
-            <button class="key" onpointerdown="startPress('\b')" onpointerup="stopPress()" onpointerleave="stopPress()">⌫</button>
-            <button class="key" onpointerdown="startPress('\n')" onpointerup="stopPress()" onpointerleave="stopPress()">Enter</button>
-        </div>
-    </div>
-
     <script>
         let start = false;
-        let isShifted = false;
-        let pressTimer;
-        let repeatInterval;
+        let pressTimer, repeatInterval;
         const socket = new WebSocket("ws://192.168.0.105:8080/ws");
+        const nativeInput = document.getElementById('native-invoker');
 
-        const layout = {
-            nums:    { normal: "1234567890-=", shifted: "!@#$%^&*()_+" },
-            row1:    { normal: "qwertyuiop[]", shifted: "QWERTYUIOP{}" },
-            row2:    { normal: "asdfghjkl;'\\", shifted: "ASDFGHJKL:\"|" },
-            row3:    { normal: "zxcvbnm,./`",   shifted: "ZXCVBNM<>?~" }
+        function focusNative() {
+            nativeInput.focus();
+        }
+
+        nativeInput.oninput = (e) => {
+            if (e.data) sendKey(e.data);
+            nativeInput.value = "";
         };
 
-        function startPress(char) {
-            sendKey(char);
-
-            stopPress();
-
-            pressTimer = setTimeout(() => {
-                repeatInterval = setInterval(() => {
-                    sendKey(char);
-                }, 50);
-            }, 225);
-        }
-
-        function stopPress() {
-            clearTimeout(pressTimer);
-            clearInterval(repeatInterval);
-        }
-
-        function renderKeyboard() {
-            Object.keys(layout).forEach(rowId => {
-                const container = document.getElementById(rowId);
-                if (!container) return;
-                container.innerHTML = "";
-                const chars = isShifted ? layout[rowId].shifted : layout[rowId].normal;
-
-                chars.split("").forEach(char => {
-                    const btn = document.createElement("button");
-                    btn.className = "key";
-                    btn.innerText = char;
-
-                    btn.onpointerdown = (e) => { e.stopPropagation(); startPress(char); };
-                    btn.onpointerup = (e) => { e.stopPropagation(); stopPress(); };
-                    btn.onpointerleave = (e) => { e.stopPropagation(); stopPress(); };
-                    container.appendChild(btn);
-                });
-            });
-            const shiftBtn = document.getElementById("shiftKey");
-            if (shiftBtn) {
-                shiftBtn.className = isShifted ? "key special active-shift" : "key special";
-            }
-        }
-
-        function toggleShift() {
-            isShifted = !isShifted;
-            renderKeyboard();
-        }
+        nativeInput.onkeydown = (e) => {
+            if (e.key === "Backspace") sendKey('\b');
+            if (e.key === "Enter") sendKey('\n');
+        };
 
         function sendKey(char) {
             if (!start || socket.readyState !== WebSocket.OPEN) return;
-            const runeVal = char.charCodeAt(0);
-            socket.send(JSON.stringify({ type: 3, key: runeVal }));
+            socket.send(JSON.stringify({ type: 3, key: char.charCodeAt(0) }));
         }
 
-        function toggleKeyboard() {
-            const kb = document.getElementById("kb-overlay");
-            kb.style.display = (kb.style.display === "block") ? "none" : "block";
-            if(kb.style.display === "block") renderKeyboard();
-        }
+        // maybe for later use
+          // function startPress(char) {
+          //     sendKey(char);
+          //     stopPress();
+          //     pressTimer = setTimeout(() => {
+          //         repeatInterval = setInterval(() => sendKey(char), 50);
+          //     }, 225);
+          // }
 
-        const activePointers = new Map()
+          // function stopPress() {
+          //     clearTimeout(pressTimer);
+          //     clearInterval(repeatInterval);
+          // }
 
-        let currentX = 0, currentY = 0;
-        let resX = 0, resY = 0, startTime, endTime;
+        const activePointers = new Map();
+        const sensitivity = 2.0;
+
+        let currentX = 0, currentY = 0, resX = 0, resY = 0, startTime, endTime;
         let leftCount = 0, leftCountTimer = null, leftPress = false;
 
         socket.onopen = () => write("CONNECTED");
@@ -137,99 +115,104 @@
         };
 
         document.addEventListener("pointerdown", (e) => {
-            if (!start || e.target.closest('#kb-overlay') || e.target.closest('#controls')) return;
-
-            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+            if (!start || e.target.closest('#controls')) return;
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
             startTime = Date.now();
-            const duration = startTime-endTime;
-            if (duration < 100 && leftCount > 0) {
-                leftPress = true;
-                socket.send(JSON.stringify({ type: 4 }));
+            if ((startTime - endTime) < 100 && leftCount > 0) {
+               mousePress();
             }
 
             e.target.setPointerCapture(e.pointerId);
         });
 
         document.addEventListener("pointermove", (e) => {
-            if (!start || e.target.closest('#kb-overlay')) return;
+            if (!start) return;
 
             const prevPos = activePointers.get(e.pointerId);
+            if (!prevPos) return;
 
             const deltaX = e.clientX - prevPos.x;
             const deltaY = e.clientY - prevPos.y;
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
             if (activePointers.size >= 2) {
-                if (Math.abs(deltaY) > Math.abs(deltaX)) {
-                    if (Math.abs(deltaY) > 2) {
-                        socket.send(JSON.stringify({ 
-                            type: 6,
-                            horizontal: false,
-                            delta: deltaY > 0 ? 1 : -1
-                        }));
-                    }
-                } else {
-                    if (Math.abs(deltaX) > 2) {
-                        socket.send(JSON.stringify({
-                            type: 6,
-                            horizontal: true,
-                            delta: deltaX > 0 ? -1 : 1
-                        }));
-                    }
-                }
+                mouseScroll(deltaX, deltaY);
             } else {
-                currentX = Math.round(Math.max(0, Math.min(resX, currentX + deltaX)));
-                currentY = Math.round(Math.max(0, Math.min(resY, currentY + deltaY)));
-                socket.send(JSON.stringify({ type: 0, x: currentX, y: currentY }));
-            }
+                mouseMove(deltaX, deltaY);
+           }
         });
 
         document.addEventListener("pointerup", (e) => {
-            activePointers.delete(e.pointerId)
-
-            if (!start || e.target.closest('#kb-overlay')) return;
+            activePointers.delete(e.pointerId);
+            if (!start) return;
 
             endTime = Date.now();
-            const duration = endTime - startTime;
-            if (leftPress == true) {
-              leftPress = false;
-              socket.send(JSON.stringify({ type: 5 }));
-
-              return;
+            if (leftPress) {
+               mouseRelease();
+               return;
             }
+            if ((endTime - startTime) < 100) {
+              leftCount++;
 
-            if (duration < 100) {
-                leftCount++
-                if (leftCountTimer) clearTimeout(leftCountTimer);
+              if (leftCountTimer) clearTimeout(leftCountTimer);
+              leftCountTimer = setTimeout(() => { leftCount = 0; leftCountTimer = null; }, 250);
 
-                leftCountTimer = setTimeout(() => {
-                    leftCount = 0;
-                    leftCountTimer = null;
-                }, 250);
-
-                const screenWidth = window.innerWidth;
-                const clickX = e.clientX;
-
-                if (clickX < screenWidth / 2) {
-                    // left side tap
-                    socket.send(JSON.stringify({ type: 1 }));
-                } else {
-                    // right Side Tap
-                    socket.send(JSON.stringify({ type: 2 }));
-                }
+              mouseClick(e.clientX);
             }
         });
 
-        function write(message) {
-            const div = document.createElement("div");
-            div.textContent = message;
-            document.getElementById("output").appendChild(div);
+        document.addEventListener("pointercancel", (e) => {
+            activePointers.delete(e.pointerId);
+        });
+
+        document.addEventListener("lostpointercapture", (e) => {
+            activePointers.delete(e.pointerId);
+        });
+
+        function mouseScroll(deltaX, deltaY) {
+            if (Math.abs(deltaY) > Math.abs(deltaX)) {
+                if (Math.abs(deltaY) > 2) socket.send(JSON.stringify({ type: 6, horizontal: false, delta: deltaY > 0 ? 1 : -1 }));
+            } else {
+                if (Math.abs(deltaX) > 2) socket.send(JSON.stringify({ type: 6, horizontal: true, delta: deltaX > 0 ? -1 : 1 }));
+            }
+        }
+
+        function mouseMove(deltaX, deltaY) {
+            currentX = Math.round(Math.max(0, Math.min(resX, currentX + (deltaX * sensitivity))));
+            currentY = Math.round(Math.max(0, Math.min(resY, currentY + (deltaY * sensitivity))));
+            socket.send(JSON.stringify({ type: 0, x: currentX, y: currentY }));
+        }
+
+        function mousePress() {
+            leftPress = true;
+            socket.send(JSON.stringify({ type: 4 }));
+        }
+
+        function mouseRelease() {
+            leftPress = false;
+            socket.send(JSON.stringify({ type: 5 }));
+        }
+
+        function mouseClick(tapX) {
+            if (tapX < window.innerWidth / 2) {
+                // left side tap
+                socket.send(JSON.stringify({ type: 1 }));
+            } else {
+                // right Side Tap
+                socket.send(JSON.stringify({ type: 2 }));
+            }
+        }
+
+        function write(m) {
+            const d = document.createElement("div"); d.textContent = m;
+            document.getElementById("output").appendChild(d);
         }
 
         function toggle() {
             start = !start;
-            document.getElementById("toggleBtn").innerText = start ? "sending" : "start";
+            document.getElementById("toggleBtn").innerText = start ? "Sending" : "Start";
+            document.getElementById("toggleBtn").style.color = start ? "var(--accent)" : "white";
         }
 
         window.oncontextmenu = (e) => { e.preventDefault(); return false; };
