@@ -17,16 +17,19 @@ type Display struct {
 	X               int32 `json:"x"`
 	Y               int32 `json:"y"`
 	VirtualTouchpad uinput.TouchPad
+	VirtualMouse    uinput.Mouse
 	VirtualKeyboard uinput.Keyboard
 }
 
 var display Display
 
 type InputInfo struct {
-	Type int8  `json:"type"` // 0 -> moveTo; 1 -> LeftClick; 2 -> RightClick; 3 -> KeyPress
-	X    int32 `json:"x"`
-	Y    int32 `json:"y"`
-	Key  rune `json:"key"`
+	Type       int8  `json:"type"` // 0 -> moveTo; 1 -> LeftClick; 2 -> RightClick; 3 -> KeyPress; 4 -> LeftPress; 5 -> leftRelease; 6 -> Scroll
+	X          int32 `json:"x"`
+	Y          int32 `json:"y"`
+	Horizontal bool  `json:"horizontal"`
+	Delta      int32 `json:"delta"`
+	Key        rune  `json:"key"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -58,7 +61,7 @@ func (d *Display) echoHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		var inputInfo InputInfo 
+		var inputInfo InputInfo
 		err = json.Unmarshal(p, &inputInfo)
 		if err != nil {
 			log.Fatal(err)
@@ -88,9 +91,24 @@ func (d *Display) echoHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		case 3: // Key Press
 			key := inputInfo.Key
-			uinput_key := internal.KeyToUinput[key]
+			uinputKey := internal.KeyToUinput[key]
 
-			err = d.VirtualKeyboard.KeyPress(uinput_key)
+			err = d.VirtualKeyboard.KeyPress(uinputKey)
+			if err != nil {
+				log.Fatal(err)
+			}
+		case 4: // Left Press
+			err = d.VirtualTouchpad.LeftPress()
+			if err != nil {
+				log.Fatal(err)
+			}
+		case 5: // Left Release
+			err = d.VirtualTouchpad.LeftRelease()
+			if err != nil {
+				log.Fatal(err)
+			}
+		case 6: // Scroll
+			err = d.VirtualMouse.Wheel(inputInfo.Horizontal, inputInfo.Delta)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -122,8 +140,15 @@ func main() {
 	}
 	defer vk.Close()
 
+	vm, err := uinput.CreateMouse("/dev/uinput", []byte("VirtualMouse"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer vm.Close()
+
 	display.VirtualTouchpad = vtp
 	display.VirtualKeyboard = vk
+	display.VirtualMouse = vm
 
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/ws", display.echoHandler)
