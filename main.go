@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/dzotsee21/remram/internal"
+
 	"github.com/bendahl/uinput"
 	"github.com/gorilla/websocket"
 	"github.com/kbinani/screenshot"
@@ -15,14 +17,16 @@ type Display struct {
 	X               int32 `json:"x"`
 	Y               int32 `json:"y"`
 	VirtualTouchpad uinput.TouchPad
+	VirtualKeyboard uinput.Keyboard
 }
 
 var display Display
 
-type MouseInfo struct {
-	Type int8  `json:"type"` // 0 -> moveTo; 1 -> LeftClick; 2 -> RightClick
+type InputInfo struct {
+	Type int8  `json:"type"` // 0 -> moveTo; 1 -> LeftClick; 2 -> RightClick; 3 -> KeyPress
 	X    int32 `json:"x"`
 	Y    int32 `json:"y"`
+	Key  rune `json:"key"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -54,19 +58,19 @@ func (d *Display) echoHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		var mouseInfo MouseInfo
-		err = json.Unmarshal(p, &mouseInfo)
+		var inputInfo InputInfo 
+		err = json.Unmarshal(p, &inputInfo)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		switch mouseInfo.Type {
+		switch inputInfo.Type {
 		case 0: // Move Mouse Position
-			fmt.Println(mouseInfo.X)
+			fmt.Println(inputInfo.X)
 			fmt.Println("---")
-			fmt.Println(mouseInfo.Y)
+			fmt.Println(inputInfo.Y)
 
-			err = d.VirtualTouchpad.MoveTo(mouseInfo.X, mouseInfo.Y)
+			err = d.VirtualTouchpad.MoveTo(inputInfo.X, inputInfo.Y)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -82,9 +86,17 @@ func (d *Display) echoHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Fatal(err)
 			}
+		case 3: // Key Press
+			key := inputInfo.Key
+			uinput_key := internal.KeyToUinput[key]
+
+			err = d.VirtualKeyboard.KeyPress(uinput_key)
+			if err != nil {
+				log.Fatal(err)
+			}
 
 		default:
-			fmt.Printf("Unknown mouse action type: %d\n", mouseInfo.Type)
+			fmt.Printf("Unknown mouse action type: %d\n", inputInfo.Type)
 		}
 	}
 }
@@ -102,8 +114,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	display.VirtualTouchpad = vtp
 	defer vtp.Close()
+
+	vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("VirtualKeyboard"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer vk.Close()
+
+	display.VirtualTouchpad = vtp
+	display.VirtualKeyboard = vk
 
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/ws", display.echoHandler)
@@ -113,26 +133,4 @@ func main() {
 	if err != nil {
 		log.Fatal("ListenAndServe error:", err)
 	}
-
-	// vk, err := uinput.CreateKeyboard("/dev/uinput", []byte("VirtualKeyboard"))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	//
-	// defer vk.Close()
-	//
-	// vm, err := uinput.CreateMouse("/dev/uinput", []byte("VirtualMouse"))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	//
-	// defer vm.Close()
-	//
-	// // vm.Move(100, 100)
-	// // vm.LeftClick()
-	//
-	// vk.KeyPress(uinput.KeyA)
-	// time.Sleep(100 * time.Millisecond)
-	// vk.KeyPress(uinput.KeyI)
-	// time.Sleep(100 * time.Millisecond)
 }

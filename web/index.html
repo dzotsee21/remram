@@ -1,131 +1,188 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <title>Go WebSocket Client</title>
-  </head>
-  <style>
-    html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        touch-action: none;
-        overflow: hidden;
-    }
-  </style>
-  <body>
+    <style>
+        html, body {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            touch-action: none; overflow: hidden;
+            -webkit-touch-callout: none; -webkit-user-select: none;
+            user-select: none; -webkit-tap-highlight-color: transparent;
+            font-family: sans-serif;
+        }
 
-    <h1>WebSocket Output</h1>
-    <button id="toggleBtn" onclick="toggle()">start</button>
+        #kb-overlay {
+            display: none; position: fixed; bottom: 0; left: 0;
+            width: 100%; background: rgba(30, 30, 30, 0.95);
+            padding: 10px; box-sizing: border-box; z-index: 100;
+        }
+        .kb-row { display: flex; justify-content: center; margin-bottom: 5px; }
+        .key {
+            background: #444; color: white; border: none; border-radius: 4px;
+            margin: 2px; padding: 12px 0; min-width: 30px; flex: 1;
+            font-size: 18px; text-align: center; cursor: pointer;
+        }
+        .key:active { background: #666; transform: translateY(2px); }
+        .key.wide { flex: 2; }
+        .key.special.active-shift { background: #007bff; }
+ 
+        #controls { position: fixed; top: 10px; left: 10px; z-index: 10; }
+        button { padding: 10px; margin-right: 5px; }
+    </style>
+</head>
+<body class="unselectable">
+
+    <div id="controls">
+        <button id="toggleBtn" onclick="toggle()">start</button>
+        <button id="kbBtn" onclick="toggleKeyboard()">⌨️ Keyboard</button>
+    </div>
+
     <div id="output"></div>
 
+    <div id="kb-overlay">
+        <div class="kb-row" id="nums"></div>
+        <div class="kb-row" id="row1"></div>
+        <div class="kb-row" id="row2"></div>
+        <div class="kb-row" id="row3"></div>
+        <div class="kb-row">
+            <button id="shiftKey" class="key special" onpointerdown="toggleShift()">Shift</button>
+            <button class="key wide" onpointerdown="startPress(' ')" onpointerup="stopPress()" onpointerleave="stopPress()">Space</button>
+            <button class="key" onpointerdown="startPress('\b')" onpointerup="stopPress()" onpointerleave="stopPress()">⌫</button>
+            <button class="key" onpointerdown="startPress('\n')" onpointerup="stopPress()" onpointerleave="stopPress()">Enter</button>
+        </div>
+    </div>
+
     <script>
-      let start = false
-      const output = document.getElementById("output");
-      const socket = new WebSocket("ws://192.168.0.110:8080/ws");
+        let start = false;
+        let isShifted = false;
+        let pressTimer;
+        let repeatInterval;
+        const socket = new WebSocket("ws://192.168.0.105:8080/ws");
 
-      let startX = 0;
-      let startY = 0;
-      let currentX = 0;
-      let currentY = 0;
+        const layout = {
+            nums:    { normal: "1234567890-=", shifted: "!@#$%^&*()_+" },
+            row1:    { normal: "qwertyuiop[]", shifted: "QWERTYUIOP{}" },
+            row2:    { normal: "asdfghjkl;'\\", shifted: "ASDFGHJKL:\"|" },
+            row3:    { normal: "zxcvbnm,./`",   shifted: "ZXCVBNM<>?~" }
+        };
 
-      let resX = 0;
-      let resY = 0;
+        function startPress(char) {
+            sendKey(char);
 
-      let startTime;
+            stopPress();
 
-      socket.onopen = () => write("CONNECTED");
-      socket.onmessage = (e) => {
-        const data = JSON.parse(e.data)
-        if (data.type == "res") {
-            assignRes(data.x, data.y)
+            pressTimer = setTimeout(() => {
+                repeatInterval = setInterval(() => {
+                    sendKey(char);
+                }, 50);
+            }, 225);
         }
-      }; 
-      socket.onclose = () => write("DISCONNECTED");
-      socket.onerror = (e) => write("ERROR");
 
-      document.addEventListener("pointerdown", (e) => {
-          startTime = Date.now();
+        function stopPress() {
+            clearTimeout(pressTimer);
+            clearInterval(repeatInterval);
+        }
 
-          startX = Math.round(e.clientX);
-          startY = Math.round(e.clientY);
-          e.target.setPointerCapture(e.pointerId);
-      });
+        function renderKeyboard() {
+            Object.keys(layout).forEach(rowId => {
+                const container = document.getElementById(rowId);
+                if (!container) return;
+                container.innerHTML = "";
+                const chars = isShifted ? layout[rowId].shifted : layout[rowId].normal;
 
-      document.addEventListener("pointermove", (e) => {
-          if (!start) return;
+                chars.split("").forEach(char => {
+                    const btn = document.createElement("button");
+                    btn.className = "key";
+                    btn.innerText = char;
 
-          const deltaX = startX - Math.round(e.clientX);
-          const deltaY = startY - Math.round(e.clientY);
+                    btn.onpointerdown = (e) => { e.stopPropagation(); startPress(char); };
+                    btn.onpointerup = (e) => { e.stopPropagation(); stopPress(); };
+                    btn.onpointerleave = (e) => { e.stopPropagation(); stopPress(); };
+                    container.appendChild(btn);
+                });
+            });
+            const shiftBtn = document.getElementById("shiftKey");
+            if (shiftBtn) {
+                shiftBtn.className = isShifted ? "key special active-shift" : "key special";
+            }
+        }
 
-          let x = currentX - deltaX;
-          let y = currentY - deltaY;
-          if (x < 0) {
-            x = 0
-          }
-          if (y < 0) {
-            y = 0
-          }
+        function toggleShift() {
+            isShifted = !isShifted;
+            renderKeyboard();
+        }
 
-          if (x > resX) {
-            x = resX
-          }
-          if (y > resY) {
-            y = resY
-          }
+        function sendKey(char) {
+            if (!start || socket.readyState !== WebSocket.OPEN) return;
+            const runeVal = char.charCodeAt(0);
+            socket.send(JSON.stringify({ type: 3, key: runeVal }));
+        }
 
-          const data = {
-              type: 0,
-              x: x,
-              y: y 
-          };
+        function toggleKeyboard() {
+            const kb = document.getElementById("kb-overlay");
+            kb.style.display = (kb.style.display === "block") ? "none" : "block";
+            if(kb.style.display === "block") renderKeyboard();
+        }
 
-          socket.send(JSON.stringify(data));
-      });
+        let startX = 0, startY = 0, currentX = 0, currentY = 0;
+        let resX = 0, resY = 0, startTime;
 
-      document.addEventListener("pointerup", (e) => {
-          const duration = Date.now() - startTime;
-          
-          if (duration < 100) {
-            const data = {
-                type: 1,
-            };
+        socket.onopen = () => write("CONNECTED");
+        socket.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.type == "res") { resX = data.x; resY = data.y; }
+        };
 
-            socket.send(JSON.stringify(data))
-            return
-          }
+        document.addEventListener("pointerdown", (e) => {
+            if (!start || e.target.closest('#kb-overlay') || e.target.closest('#controls')) return;
+            e.target.setPointerCapture(e.pointerId);
+            startTime = Date.now();
+            startX = Math.round(e.clientX);
+            startY = Math.round(e.clientY);
+        });
 
-          if (currentX - (startX - Math.round(e.clientX)) <= resX) {
-            currentX -= (startX - Math.round(e.clientX));
-          } else {
-            currentX = resX
-          }
-          if (currentY - (startY - Math.round(e.clientY)) <= resY) {
-            currentY -= (startY - Math.round(e.clientY));
-          } else {
-            currentY = resY
-          }
-      })
+        document.addEventListener("pointermove", (e) => {
+            if (!start || e.target.closest('#kb-overlay')) return;
+            const clientX = Math.round(e.clientX);
+            const clientY = Math.round(e.clientY);
+            const deltaX = clientX - startX;
+            const deltaY = clientY - startY;
+            currentX = Math.max(0, Math.min(resX, currentX + deltaX));
+            currentY = Math.max(0, Math.min(resY, currentY + deltaY));
+            startX = clientX;
+            startY = clientY;
+            socket.send(JSON.stringify({ type: 0, x: currentX, y: currentY }));
+        });
 
-      function write(message) {
-           const div = document.createElement("div");
-           div.textContent = message;
-           output.appendChild(div);
-      }
+        document.addEventListener("pointerup", (e) => {
+            if (!start || e.target.closest('#kb-overlay')) return;
+            const duration = Date.now() - startTime;
+            if (duration < 100) {
+                const screenWidth = window.innerWidth;
+                const clickX = e.clientX;
 
-      function assignRes(x, y) {
-        console.log(x, y);
-        resX = x;
-        resY = y;
-      };
+                if (clickX < screenWidth / 2) {
+                    // left side tap
+                    socket.send(JSON.stringify({ type: 1 }));
+                } else {
+                    // right Side Tap
+                    socket.send(JSON.stringify({ type: 2 }));
+                }
+            }
+        });
 
-      function toggle() {
-        start = !start;
+        function write(message) {
+            const div = document.createElement("div");
+            div.textContent = message;
+            document.getElementById("output").appendChild(div);
+        }
 
-        document.getElementById("toggleBtn").innerText = start ? "sending" : "start";
-      }
+        function toggle() {
+            start = !start;
+            document.getElementById("toggleBtn").innerText = start ? "sending" : "start";
+        }
 
+        window.oncontextmenu = (e) => { e.preventDefault(); return false; };
     </script>
-
-  </body>
+</body>
 </html>
