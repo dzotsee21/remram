@@ -6,7 +6,7 @@ Remram is a lightweight Go utility that turns another device into a remote track
 
 It is mainly designed for phone → PC control, but it also works for PC → PC connections.
 
-Remram currently supports Linux (X11 & Wayland) (at least works on my machine lol)
+Remram currently supports Linux (X11 & Wayland)
 
 ## Installation:
 ```bash
