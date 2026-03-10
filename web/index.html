@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Go Remote Control</title>
+    <title>Remote Controller - RemRam</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
         html, body {
@@ -42,6 +42,34 @@
             pointer-events: none;
         }
 
+        #click-zones {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .zone {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.1);
+            font-size: 2rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        #controls {
+            z-index: 1000;
+        }
+
         #output {
             position: fixed;
             bottom: calc(10px + env(safe-area-inset-bottom));
@@ -57,16 +85,27 @@
     <input type="text" id="native-invoker" autocomplete="off" autocapitalize="off" spellcheck="false">
 
     <div id="controls">
-        <button id="toggleBtn" class="ui-btn" onclick="toggle()">Start</button>
-        <button class="ui-btn" onclick="focusNative()">📱 Native</button>
+        <button class="ui-btn" onclick="focusNative()">Keyboard</button>
     </div>
 
     <div id="output"></div>
 
+    <div id="click-zones">
+        <div class="zone">LEFT</div>
+        <div class="zone">RIGHT</div>
+    </div>
+
     <script>
         let start = false;
-        let pressTimer, repeatInterval;
         const socket = new WebSocket("ws://192.168.0.105:8080/ws");
+
+        let resX = 0, resY = 0
+        socket.onopen = () => write("CONNECTED");
+        socket.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.type == "res") { resX = data.x; resY = data.y; }
+        };
+
         const nativeInput = document.getElementById('native-invoker');
 
         function focusNative() {
@@ -81,14 +120,16 @@
         nativeInput.onkeydown = (e) => {
             if (e.key === "Backspace") sendKey('\b');
             if (e.key === "Enter") sendKey('\n');
+            if (e.key === "Shift") sendKey('\x10')
         };
 
         function sendKey(char) {
-            if (!start || socket.readyState !== WebSocket.OPEN) return;
+            char = char.toLowerCase();
             socket.send(JSON.stringify({ type: 3, key: char.charCodeAt(0) }));
         }
 
         // maybe for later use
+          // let pressTimer, repeatInterval;
           // function startPress(char) {
           //     sendKey(char);
           //     stopPress();
@@ -102,21 +143,19 @@
           //     clearInterval(repeatInterval);
           // }
 
+        const isFirstMove = new Map();
         const activePointers = new Map();
-        const sensitivity = 2.0;
+        const sensitivity = 2.0; // adjust as needed
 
-        let currentX = 0, currentY = 0, resX = 0, resY = 0, startTime, endTime;
+        let currentX = 0, currentY = 0, startTime, endTime;
         let leftCount = 0, leftCountTimer = null, leftPress = false;
 
-        socket.onopen = () => write("CONNECTED");
-        socket.onmessage = (e) => {
-            const data = JSON.parse(e.data);
-            if (data.type == "res") { resX = data.x; resY = data.y; }
-        };
-
         document.addEventListener("pointerdown", (e) => {
-            if (!start || e.target.closest('#controls')) return;
+            if (e.target.closest('#controls')) return;
+            start = true;
+
             activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            isFirstMove.set(e.pointerId, true); 
 
             startTime = Date.now();
             if ((startTime - endTime) < 100 && leftCount > 0) {
@@ -124,6 +163,7 @@
             }
 
             e.target.setPointerCapture(e.pointerId);
+
         });
 
         document.addEventListener("pointermove", (e) => {
@@ -136,6 +176,11 @@
             const deltaY = e.clientY - prevPos.y;
             activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
+            if (isFirstMove.get(e.pointerId)) { // this avoids touch slop bug
+                isFirstMove.set(e.pointerId, false);
+                return;
+            }
+
             if (activePointers.size >= 2) {
                 mouseScroll(deltaX, deltaY);
             } else {
@@ -144,8 +189,10 @@
         });
 
         document.addEventListener("pointerup", (e) => {
+            start = false;
+
             activePointers.delete(e.pointerId);
-            if (!start) return;
+            isFirstMove.delete(e.pointerId);
 
             endTime = Date.now();
             if (leftPress) {
@@ -163,10 +210,12 @@
         });
 
         document.addEventListener("pointercancel", (e) => {
+            start = false;
             activePointers.delete(e.pointerId);
         });
 
         document.addEventListener("lostpointercapture", (e) => {
+            start = false;
             activePointers.delete(e.pointerId);
         });
 
@@ -207,12 +256,6 @@
         function write(m) {
             const d = document.createElement("div"); d.textContent = m;
             document.getElementById("output").appendChild(d);
-        }
-
-        function toggle() {
-            start = !start;
-            document.getElementById("toggleBtn").innerText = start ? "Sending" : "Start";
-            document.getElementById("toggleBtn").style.color = start ? "var(--accent)" : "white";
         }
 
         window.oncontextmenu = (e) => { e.preventDefault(); return false; };
