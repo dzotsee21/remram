@@ -4,7 +4,7 @@
 # Remram - Remote Device Controller
 Remram is a lightweight Go utility that turns another device into a remote trackpad and keyboard for your computer.
 
-It is mainly designed for phone → PC control, but it also works for PC → PC connections.
+It is mainly designed for phone → PC control, but it also works for PC → PC control.
 
 Remram currently supports Linux (X11 & Wayland)
 
