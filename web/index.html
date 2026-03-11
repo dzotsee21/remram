@@ -58,16 +58,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: rgba(255, 255, 255, 0.1);
+            color: white;
             font-size: 2rem;
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 2px;
             border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        #controls {
-            z-index: 1000;
         }
 
         #output {
@@ -77,6 +73,53 @@
             color: #555;
             font-size: 12px;
             pointer-events: none;
+        }
+
+        #settings-container {
+            position: fixed;
+            bottom: calc(10px + env(safe-area-inset-bottom));
+            right: calc(10px + env(safe-area-inset-right));
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+        }
+
+        #settings-menu {
+            display: none;
+            background: rgba(40, 40, 40, 0.95);
+            border: 1px solid #444;
+            padding: 15px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            width: 150px;
+        }
+
+        #settings-menu label {
+            color: #ccc;
+            font-size: 12px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        #sens-slider {
+            width: 100%;
+            accent-color: #666;
+            cursor: pointer;
+        }
+
+        #settings-icon {
+            background: rgba(40, 40, 40, 0.8);
+            border: 1px solid #444;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
         }
     </style>
 </head>
@@ -88,6 +131,16 @@
         <button class="ui-btn" onclick="focusNative()">Keyboard</button>
     </div>
 
+    <div id="settings-container">
+        <div id="settings-menu">
+            <label>Sensitivity: <span id="sens-val">2</span></label>
+            <input type="range" id="sens-slider" min="1" max="10" step="0.5" value="2">
+        </div>
+        <div id="settings-icon" onclick="toggleSettings()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </div>
+    </div>
+
     <div id="output"></div>
 
     <div id="click-zones">
@@ -97,14 +150,27 @@
 
     <script>
         let start = false;
-        const socket = new WebSocket("ws://192.168.0.105:8080/ws");
+
+        const socketUrl = `ws://${window.location.hostname}:${window.location.port}/ws`;
+        let socket;
 
         let resX = 0, resY = 0
-        socket.onopen = () => write("CONNECTED");
-        socket.onmessage = (e) => {
-            const data = JSON.parse(e.data);
-            if (data.type == "res") { resX = data.x; resY = data.y; }
-        };
+        function connect() {
+            socket = new WebSocket(socketUrl);
+
+            socket.onopen = () => write("CONNECTED");
+            socket.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type == "res") { resX = data.x; resY = data.y; }
+            };
+        }
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === 'visible') {
+                connect();
+            }
+        })
+
+        connect();
 
         const nativeInput = document.getElementById('native-invoker');
 
@@ -128,30 +194,15 @@
             socket.send(JSON.stringify({ type: 3, key: char.charCodeAt(0) }));
         }
 
-        // maybe for later use
-          // let pressTimer, repeatInterval;
-          // function startPress(char) {
-          //     sendKey(char);
-          //     stopPress();
-          //     pressTimer = setTimeout(() => {
-          //         repeatInterval = setInterval(() => sendKey(char), 50);
-          //     }, 225);
-          // }
-
-          // function stopPress() {
-          //     clearTimeout(pressTimer);
-          //     clearInterval(repeatInterval);
-          // }
-
         const isFirstMove = new Map();
         const activePointers = new Map();
-        const sensitivity = 2.0; // adjust as needed
+        let sensitivity = 2.0;
 
         let currentX = 0, currentY = 0, startTime, endTime;
         let leftCount = 0, leftCountTimer = null, leftPress = false;
 
         document.addEventListener("pointerdown", (e) => {
-            if (e.target.closest('#controls')) return;
+            if (e.target.closest('#controls') || e.target.closest('#settings-container')) return;
             start = true;
 
             activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -200,6 +251,8 @@
                return;
             }
             if ((endTime - startTime) < 100) {
+              if (e.target.closest('#settings-container')) return;
+ 
               leftCount++;
 
               if (leftCountTimer) clearTimeout(leftCountTimer);
@@ -245,20 +298,30 @@
 
         function mouseClick(tapX) {
             if (tapX < window.innerWidth / 2) {
-                // left side tap
                 socket.send(JSON.stringify({ type: 1 }));
             } else {
-                // right Side Tap
                 socket.send(JSON.stringify({ type: 2 }));
             }
         }
 
         function write(m) {
-            const d = document.createElement("div"); d.textContent = m;
-            document.getElementById("output").appendChild(d);
+            document.getElementById("output").textContent = m;
         }
 
         window.oncontextmenu = (e) => { e.preventDefault(); return false; };
+
+        const menu = document.getElementById('settings-menu');
+        const slider = document.getElementById('sens-slider');
+        const valDisplay = document.getElementById('sens-val');
+
+        function toggleSettings() {
+            menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+        }
+
+        slider.oninput = function() {
+            sensitivity = parseFloat(this.value);
+            valDisplay.textContent = this.value;
+        };
     </script>
 </body>
 </html>
