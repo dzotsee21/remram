@@ -28,7 +28,7 @@ start the server:
 
 ## Todo
 - smoother scrolling
-- customizable settings
+- [x] customizable settings
 - less installation steps
 - support for other platforms (Windows and MacOS primarily)
 
