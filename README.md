@@ -13,7 +13,7 @@ Remram currently supports Linux (X11 & Wayland)
 > chmod +x setup.sh
 > ./setup.sh
 ```
-Replace `DEVICE_IP` with the local IP address of your phone.
+Replace `DEVICE_IP` with the local IP address of your phone. (keep in mind that your DEVICE_IP may change)
 <br />
 ```bash
 > sudo ufw allow from DEVICE_IP to any port 8080
